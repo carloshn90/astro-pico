@@ -4,13 +4,16 @@
 #![no_std]
 #![no_main]
 
+mod stepper;
+
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::OutputPin;
 use panic_probe as _;
 use rp235x_hal::clocks::init_clocks_and_plls;
 use rp235x_hal::{self as hal, entry};
 use rp235x_hal::{Clock, pac};
+
+use crate::stepper::{Direction, StepperMotor, ULN2003};
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
@@ -52,24 +55,31 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    // This is the correct pin on the Raspberry Pico 2 board. On other boards, even if they have an
-    // on-board LED, it might need to be changed.
-    //
-    // Notably, on the Pico 2 W, the LED is not connected to any of the RP2350 GPIOs but to the cyw43 module instead.
-    // One way to do that is by using [embassy](https://github.com/embassy-rs/embassy/blob/main/examples/rp/src/bin/wifi_blinky.rs)
-    //
-    // If you have a Pico W and want to toggle a LED with a simple GPIO output pin, you can connect an external
-    // LED to one of the GPIO pins, and reference that pin here. Don't forget adding an appropriate resistor
-    // in series with the LED.
-    let mut led_pin = pins.gpio25.into_push_pull_output();
+    // stepper
+    let pin2 = pins.gpio2.into_push_pull_output();
+    let pin3 = pins.gpio3.into_push_pull_output();
+    let pin4 = pins.gpio4.into_push_pull_output();
+    let pin5 = pins.gpio5.into_push_pull_output();
+    let mut motor = ULN2003::new(pin2, pin3, pin4, pin5);
 
+    let mut count = 0;
+    let mut direction = Direction::Normal;
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        info!("off!");
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        if count < 5000 {
+            motor.step().unwrap();
+            delay.delay_ms(5);
+            count += 1;
+        } else {
+            motor.stop().unwrap();
+            if direction == Direction::Normal {
+                direction = Direction::Reverse;
+                motor.set_direction(Direction::Reverse);
+            } else {
+                direction = Direction::Normal;
+                motor.set_direction(Direction::Normal);
+            }
+            count = 0;
+        }
     }
 }
 
@@ -83,5 +93,3 @@ pub static PICOTOOL_ENTRIES: [rp235x_hal::binary_info::EntryAddr; 5] = [
     rp235x_hal::binary_info::rp_cargo_homepage_url!(),
     rp235x_hal::binary_info::rp_program_build_attribute!(),
 ];
-
-// End of file
